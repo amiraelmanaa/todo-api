@@ -83,7 +83,8 @@ async countTodosByStatus() {
     DONE: Number(counts.find(c => c.status === StatusEnum.DONE)?.count ?? 0),
   };
 }
-
+//afficher zéro si aucun Todo n'existe pour un statut
+// number car le resultat de postgres peut etre retourné en forme de chaine
 
 async getAll(page: number, limit: number) {
   const [todos, total] = await this.todoRepository.findAndCount({
