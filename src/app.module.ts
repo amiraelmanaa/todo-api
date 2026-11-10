@@ -5,6 +5,8 @@ import { CommonModule } from './common/common.module.js';
 import { TestModule } from './test/test.module.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TodoEntity } from './todo/entities/todo.entity.js';
+import { TodoModule } from './todo/todo.module.js';
+
 @Module({
   imports: [
   CommonModule,
@@ -20,6 +22,8 @@ import { TodoEntity } from './todo/entities/todo.entity.js';
     entities: [TodoEntity],
     synchronize: true,
   }),
+
+  TodoModule,
 ],
   controllers: [AppController],
   providers: [AppService],
