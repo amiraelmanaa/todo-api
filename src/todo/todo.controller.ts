@@ -5,8 +5,10 @@ import {
   Version,
   Query,
   DefaultValuePipe,
+  Req
 } from '@nestjs/common';
 
+import * as authMiddleware from '../common/middlewares/auth.middleware.js';
 import { TodoService } from './todo.service.js';
 import { CreateTodoDto } from './dto/create-todo.dto.js';
 import {
@@ -27,44 +29,76 @@ export class TodoController {
     private readonly todoService: TodoService,
   ) {}
 
+  /*
   @Post()
   @Version('1')
   addTodoV1(@Body() dto: CreateTodoDto) {
     return this.todoService.addTodoV1(dto);
   }
+*/
 
+// Version 1 : création d'une Todo associée à son propriétaire
+@Post()
+@Version('1')
+addTodoV1(
+  @Body() dto: CreateTodoDto,
+  @Req() req: authMiddleware.AuthenticatedRequest,
+) {
+  return this.todoService.addTodoV1(dto, req.userId!);
+}
+
+/*
   @Post()
   @Version('2')
   addTodoV2(@Body() dto: CreateTodoDto) {
     return this.todoService.addTodoV2(dto);
  }
+*/
+// Version 2 : création d'une Todo associée à son propriétaire
+@Post()
+@Version('2')
+addTodoV2(
+  @Body() dto: CreateTodoDto,
+  @Req() req: authMiddleware.AuthenticatedRequest,
+) {
+  return this.todoService.addTodoV2(dto, req.userId!);
+}
+
  @Patch(':id')
 @Version('1')
 updateTodo(
   @Param('id', ParseIntPipe) id: number,
   @Body() dto: UpdateTodoDto,
+  @Req() req: authMiddleware.AuthenticatedRequest,
 ) {
-  return this.todoService.updateTodo(id, dto);
+  return this.todoService.updateTodo(id, dto, req.userId!);
 }
 
 @Delete(':id')
 @Version('1')
 deleteTodo(
   @Param('id', ParseIntPipe) id: number,
+  @Req() req: authMiddleware.AuthenticatedRequest,
 ) {
-  return this.todoService.deleteTodo(id);
+  return this.todoService.deleteTodo(id, req.userId!);
 }
 
 @Patch(':id/soft-delete')
 @Version('1')
-softDeleteTodo(@Param('id', ParseIntPipe) id: number) {
-  return this.todoService.softDeleteTodo(id);
+softDeleteTodo(
+  @Param('id', ParseIntPipe) id: number,
+  @Req() req: authMiddleware.AuthenticatedRequest,
+) {
+  return this.todoService.softDeleteTodo(id, req.userId!);
 }
 
 @Patch(':id/restore')
 @Version('1')
-restoreTodo(@Param('id', ParseIntPipe) id: number) {
-  return this.todoService.restoreTodo(id);
+restoreTodo(
+  @Param('id', ParseIntPipe) id: number,
+  @Req() req: authMiddleware.AuthenticatedRequest,
+) {
+  return this.todoService.restoreTodo(id, req.userId!);
 }
 
 

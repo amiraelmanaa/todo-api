@@ -1,4 +1,10 @@
-import { Injectable,NotFoundException } from '@nestjs/common';
+
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -6,129 +12,247 @@ import { TodoEntity } from './entities/todo.entity.js';
 import { CreateTodoDto } from './dto/create-todo.dto.js';
 import { UpdateTodoDto } from './dto/update-todo.dto.js';
 import { StatusEnum } from './enums/status.enums.js';
+
+import { UserService } from '../user/user.service.js';
+
 @Injectable()
 export class TodoService {
   constructor(
     @InjectRepository(TodoEntity)
     private readonly todoRepository: Repository<TodoEntity>,
+
+    private readonly userService: UserService,
   ) {}
 
-async addTodoV1(dto: CreateTodoDto) {
-  return await this.todoRepository.save(dto);
-  //On transmet directement les données au repository pour les enregistrer
-}
+  // Vérifier que l'utilisateur existe et récupérer son entité
+  private async getUser(userId: number) {
+    const user = await this.userService.findById(userId);
 
-async addTodoV2(dto: CreateTodoDto) {
-  const todo = this.todoRepository.create(dto);
+    if (!user) {
+      throw new NotFoundException(`Utilisateur ${userId} introuvable`);
+    }
 
-  return await this.todoRepository.save(todo);
-}
-
-async updateTodo(id: number, dto: UpdateTodoDto) {
-  const todo = await this.todoRepository.findOneBy({ id });
-
-  if (!todo) {
-    throw new NotFoundException(`Todo avec id ${id} introuvable`);
+    return user;
   }
 
-  Object.assign(todo, dto);
+  // Récupérer un Todo et vérifier qu'il appartient à l'utilisateur
+  private async getTodoOwnedByUser(id: number, userId: number) {
+    const todo = await this.todoRepository.findOne({
+      where: { id },
+      relations: { user: true },
+      withDeleted: true,
+    });
 
-  return await this.todoRepository.save(todo);
-}
-async deleteTodo(id: number) {
-  const todo = await this.todoRepository.findOneBy({ id });
+    if (!todo) {
+      throw new NotFoundException(`Todo ${id} introuvable`);
+    }
 
-  if (!todo) {
-    throw new NotFoundException(`Todo ${id} introuvable`);
+    if (!todo.user || todo.user.id !== userId) {
+      throw new ForbiddenException(
+        'Accès refusé : ce Todo ne vous appartient pas',
+      );
+    }
+
+    return todo;
   }
 
-  await this.todoRepository.remove(todo);
+  // =========================
+  // CREATE
+  // =========================
 
-  return { message: 'Todo supprimé avec succès' };
-}
+  async addTodoV1(dto: CreateTodoDto, userId: number) {
+    const user = await this.getUser(userId);
 
+    // Ancienne version :
+    // return await this.todoRepository.save(dto);
 
-async softDeleteTodo(id: number) {
-  const result = await this.todoRepository.softDelete(id);
-
-  if (result.affected === 0) {
-    throw new NotFoundException(`Todo ${id} introuvable`);
+    // Nouvelle version : on associe le Todo à son créateur
+    return await this.todoRepository.save({
+      ...dto,
+      user,
+    });
   }
 
-  return { message: 'Todo supprimé temporairement' };
-}
+  async addTodoV2(dto: CreateTodoDto, userId: number) {
+    const user = await this.getUser(userId);
 
-async restoreTodo(id: number) {
-  const result = await this.todoRepository.restore(id);
+    // Ancienne version :
+    // const todo = this.todoRepository.create(dto);
+    // return await this.todoRepository.save(todo);
 
-  if (result.affected === 0) {
-    throw new NotFoundException(`Todo ${id} introuvable ou non supprimé`);
+    // Nouvelle version : création avec association de l'utilisateur
+    const todo = this.todoRepository.create({
+      ...dto,
+      user,
+    });
+
+    return await this.todoRepository.save(todo);
   }
 
-  return { message: 'Todo restauré avec succès' };
-}
+  // =========================
+  // UPDATE
+  // =========================
 
-//obtenir le nombre de tâches dans chacun des trois statuts avec un seul appel HTTP
-async countTodosByStatus() {
-  const counts = await this.todoRepository
-    .createQueryBuilder('todo')
-    .select('todo.status', 'status')
-    .addSelect('COUNT(todo.id)', 'count')
-    .groupBy('todo.status')
-    .getRawMany();
+  async updateTodo(id: number, dto: UpdateTodoDto, userId: number) {
 
-  return {
-    TODO: Number(counts.find(c => c.status === StatusEnum.TODO)?.count ?? 0),
-    IN_PROGRESS: Number(counts.find(c => c.status === StatusEnum.IN_PROGRESS)?.count ?? 0),
-    DONE: Number(counts.find(c => c.status === StatusEnum.DONE)?.count ?? 0),
-  };
-}
-//afficher zéro si aucun Todo n'existe pour un statut
-// number car le resultat de postgres peut etre retourné en forme de chaine
+    // Ancienne version :
+    // const todo = await this.todoRepository.findOneBy({ id });
+    // if (!todo) {
+    //   throw new NotFoundException(`Todo avec id ${id} introuvable`);
+    // }
+    // Object.assign(todo, dto);
+    // return await this.todoRepository.save(todo);
 
-async getAll(page: number, limit: number) {
-  const [todos, total] = await this.todoRepository.findAndCount({
-    skip: (page - 1) * limit,
-    take: limit,
-    order: {
-      id: 'ASC',
-    },
-  });
+    // Nouvelle version : vérifier le propriétaire
+    const todo = await this.getTodoOwnedByUser(id, userId);
 
-  return {
-    data: todos,
-    total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-  };
-}
+    Object.assign(todo, dto);
 
-async getTodoById(id: number) {
-  const todo = await this.todoRepository.findOneBy({ id });
-
-  if (!todo) {
-    throw new NotFoundException(`Todo ${id} introuvable`);
+    return await this.todoRepository.save(todo);
   }
 
-  return todo;
-}
+  // =========================
+  // DELETE DEFINITIF
+  // =========================
 
+  async deleteTodo(id: number, userId: number) {
 
-async searchTodos(search?: string, status?: StatusEnum) {
-  const query = this.todoRepository.createQueryBuilder('todo');
+    // Ancienne version :
+    // const todo = await this.todoRepository.findOneBy({ id });
+    // if (!todo) {
+    //   throw new NotFoundException(`Todo ${id} introuvable`);
+    // }
+    // await this.todoRepository.remove(todo);
 
-  if (search) {
-    query.andWhere(
-      '(todo.name ILIKE :search OR todo.description ILIKE :search)',
-      { search: `%${search}%` },
-    );
+    // Nouvelle version : vérifier le propriétaire avant suppression
+    const todo = await this.getTodoOwnedByUser(id, userId);
+
+    await this.todoRepository.remove(todo);
+
+    return { message: 'Todo supprimé avec succès' };
   }
 
-  if (status) {
-    query.andWhere('todo.status = :status', { status });
+  // =========================
+  // SOFT DELETE
+  // =========================
+
+  async softDeleteTodo(id: number, userId: number) {
+
+    // Ancienne version :
+    // const result = await this.todoRepository.softDelete(id);
+    // if (result.affected === 0) {
+    //   throw new NotFoundException(`Todo ${id} introuvable`);
+    // }
+
+    // Nouvelle version : vérifier le propriétaire
+    const todo = await this.getTodoOwnedByUser(id, userId);
+
+    if (todo.deletedAt) {
+      throw new NotFoundException(`Todo ${id} est déjà supprimé`);
+    }
+
+    await this.todoRepository.softDelete(id);
+
+    return { message: 'Todo supprimé temporairement' };
   }
 
-  return await query.getMany();
-}
+  // =========================
+  // RESTORE
+  // =========================
+
+  async restoreTodo(id: number, userId: number) {
+
+    // Ancienne version :
+    // const result = await this.todoRepository.restore(id);
+    // if (result.affected === 0) {
+    //   throw new NotFoundException(`Todo ${id} introuvable ou non supprimé`);
+    // }
+
+    // Nouvelle version : vérifier le propriétaire, même si le Todo est supprimé
+    const todo = await this.getTodoOwnedByUser(id, userId);
+
+    if (!todo.deletedAt) {
+      throw new NotFoundException(`Todo ${id} n'est pas supprimé`);
+    }
+
+    await this.todoRepository.restore(id);
+
+    return { message: 'Todo restauré avec succès' };
+  }
+
+  // =========================
+  // STATISTICS
+  // =========================
+
+  async countTodosByStatus() {
+    const counts = await this.todoRepository
+      .createQueryBuilder('todo')
+      .select('todo.status', 'status')
+      .addSelect('COUNT(todo.id)', 'count')
+      .groupBy('todo.status')
+      .getRawMany();
+
+    return {
+      TODO: Number(counts.find(c => c.status === StatusEnum.TODO)?.count ?? 0),
+      IN_PROGRESS: Number(counts.find(c => c.status === StatusEnum.IN_PROGRESS)?.count ?? 0),
+      DONE: Number(counts.find(c => c.status === StatusEnum.DONE)?.count ?? 0),
+    };
+  }
+
+  // =========================
+  // PAGINATION
+  // =========================
+
+  async getAll(page: number, limit: number) {
+    const [todos, total] = await this.todoRepository.findAndCount({
+      skip: (page - 1) * limit,
+      take: limit,
+      order: {
+        id: 'ASC',
+      },
+    });
+
+    return {
+      data: todos,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  // =========================
+  // GET BY ID
+  // =========================
+
+  async getTodoById(id: number) {
+    const todo = await this.todoRepository.findOneBy({ id });
+
+    if (!todo) {
+      throw new NotFoundException(`Todo ${id} introuvable`);
+    }
+
+    return todo;
+  }
+
+  // =========================
+  // SEARCH
+  // =========================
+
+  async searchTodos(search?: string, status?: StatusEnum) {
+    const query = this.todoRepository.createQueryBuilder('todo');
+
+    if (search) {
+      query.andWhere(
+        '(todo.name ILIKE :search OR todo.description ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (status) {
+      query.andWhere('todo.status = :status', { status });
+    }
+
+    return await query.getMany();
+  }
 }
