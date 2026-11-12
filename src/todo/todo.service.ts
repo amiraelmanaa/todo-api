@@ -25,6 +25,8 @@ export class TodoService {
   ) {}
 
   // Vérifier que l'utilisateur existe et récupérer son entité
+  //Parce qu'un JWT peut être correctement signé sans que son userId corresponde à un utilisateur existant dans notre base de donnée
+  
   private async getUser(userId: number) {
     const user = await this.userService.findById(userId);
 
@@ -40,11 +42,11 @@ export class TodoService {
     const todo = await this.todoRepository.findOne({
       where: { id },
       relations: { user: true },
-      withDeleted: true,
+      withDeleted: true, // permet de récupérer également les Todos supprimés temporairement
     });
 
     if (!todo) {
-      throw new NotFoundException(`Todo ${id} introuvable`);
+      throw new NotFoundException(`Todo ${id} introuvable`); //404
     }
 
     if (!todo.user || todo.user.id !== userId) {
@@ -56,9 +58,8 @@ export class TodoService {
     return todo;
   }
 
-  // =========================
+ 
   // CREATE
-  // =========================
 
   async addTodoV1(dto: CreateTodoDto, userId: number) {
     const user = await this.getUser(userId);
@@ -89,9 +90,8 @@ export class TodoService {
     return await this.todoRepository.save(todo);
   }
 
-  // =========================
+ 
   // UPDATE
-  // =========================
 
   async updateTodo(id: number, dto: UpdateTodoDto, userId: number) {
 
@@ -104,6 +104,7 @@ export class TodoService {
     // return await this.todoRepository.save(todo);
 
     // Nouvelle version : vérifier le propriétaire
+
     const todo = await this.getTodoOwnedByUser(id, userId);
 
     Object.assign(todo, dto);
@@ -111,9 +112,9 @@ export class TodoService {
     return await this.todoRepository.save(todo);
   }
 
-  // =========================
+ 
   // DELETE DEFINITIF
-  // =========================
+  
 
   async deleteTodo(id: number, userId: number) {
 
@@ -125,6 +126,7 @@ export class TodoService {
     // await this.todoRepository.remove(todo);
 
     // Nouvelle version : vérifier le propriétaire avant suppression
+    
     const todo = await this.getTodoOwnedByUser(id, userId);
 
     await this.todoRepository.remove(todo);
@@ -132,9 +134,8 @@ export class TodoService {
     return { message: 'Todo supprimé avec succès' };
   }
 
-  // =========================
+  
   // SOFT DELETE
-  // =========================
 
   async softDeleteTodo(id: number, userId: number) {
 
@@ -156,9 +157,9 @@ export class TodoService {
     return { message: 'Todo supprimé temporairement' };
   }
 
-  // =========================
+ 
   // RESTORE
-  // =========================
+  
 
   async restoreTodo(id: number, userId: number) {
 
@@ -180,10 +181,9 @@ export class TodoService {
     return { message: 'Todo restauré avec succès' };
   }
 
-  // =========================
+  
   // STATISTICS
-  // =========================
-
+ 
   async countTodosByStatus() {
     const counts = await this.todoRepository
       .createQueryBuilder('todo')
@@ -199,9 +199,8 @@ export class TodoService {
     };
   }
 
-  // =========================
+ 
   // PAGINATION
-  // =========================
 
   async getAll(page: number, limit: number) {
     const [todos, total] = await this.todoRepository.findAndCount({
@@ -221,9 +220,9 @@ export class TodoService {
     };
   }
 
-  // =========================
+ 
   // GET BY ID
-  // =========================
+ 
 
   async getTodoById(id: number) {
     const todo = await this.todoRepository.findOneBy({ id });
